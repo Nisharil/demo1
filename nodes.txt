@@ -1,0 +1,212 @@
+Great! You're using **Prometheus with Kubernetes service discovery** to dynamically find and scrape a custom exporter deployed as a Kubernetes service. Let's walk through and explain each part of your `prometheus.yml` snippet in detail.
+
+---
+
+## 🔧 Full Breakdown of Your `prometheus.yml` Snippet
+
+```yaml
+global:
+  scrape_interval:     15s
+  evaluation_interval: 15s
+```
+
+### 🕒 Global Configuration
+- **`scrape_interval`**: Prometheus scrapes targets **every 15 seconds**
+- **`evaluation_interval`**: Alert rules are evaluated every 15 seconds
+
+---
+
+```yaml
+  - job_name: 'acos-scraper-job'
+```
+
+### 🔍 Job Definition
+- This defines a Prometheus **scraping job** called `'acos-scraper-job'`.
+
+---
+
+```yaml
+    kubernetes_sd_configs:
+    - role: endpoints
+      namespaces:
+        names:
+        - default
+```
+
+### ⚙️ Kubernetes Service Discovery
+- Tells Prometheus to **automatically discover services** in Kubernetes using the **endpoints role**.
+- It's scoped to the **`default` namespace** only.
+  
+> 🔎 `role: endpoints` means Prometheus looks at the actual pods behind services to scrape.
+
+---
+
+```yaml
+    relabel_configs:
+    - source_labels: [__meta_kubernetes_service_name]
+      action: keep
+      regex: prometheus-exporter-svc
+```
+
+### 🔁 Relabeling Rule #1 – Filter by Service Name
+- This **keeps only** the targets whose Kubernetes service name is `prometheus-exporter-svc`
+- All other discovered endpoints are ignored
+
+---
+
+```yaml
+    - source_labels: [__meta_kubernetes_pod_host_ip]
+      target_label: __address__
+      replacement: ${1}:30101
+```
+
+### 🔁 Relabeling Rule #2 – Set Target Address
+- Uses the **host IP** of the pod (e.g., `10.1.1.45`) and sets the target address to `10.1.1.45:30101`
+- Prometheus will then scrape metrics from this port
+- This is useful when your exporter is **running on the node’s host network or exposed on a NodePort**
+
+---
+
+```yaml
+    metrics_path: '/metrics'
+```
+
+### 📊 Metrics Path
+- Prometheus will scrape metrics from `/metrics` endpoint
+
+---
+
+```yaml
+    params:
+      host_ip: ["10.43.12.122"]
+      api_endpoint: ["/slb/dns"]
+      api_name: ["_slb_dns"]
+```
+
+### 🔗 URL Parameters (Query Params)
+These are **extra parameters** sent in the URL when scraping metrics. For example:
+
+```bash
+http://<node_ip>:30101/metrics?host_ip=10.43.12.122&api_endpoint=/slb/dns&api_name=_slb_dns
+```
+
+These values are used by your exporter to:
+- Connect to a specific **target device (`10.43.12.122`)**
+- Query a specific **API endpoint**
+- Attach a **label (`_slb_dns`)** to the scraped metric
+
+---
+
+## ✅ Use Case Summary
+
+This config is used when:
+- You have a **custom Prometheus exporter** running on Kubernetes.
+- The exporter needs to fetch data from A10 ACOS APIs or similar.
+- You **expose the exporter via a service** (like `prometheus-exporter-svc`) and NodePort (`30101`)
+- You want Prometheus to **automatically discover and scrape it** using Kubernetes service discovery.
+
+---
+
+## 🧪 Bonus Tip – Confirm It's Working
+
+Check in the Prometheus UI at `http://<prometheus-ip>:9090/targets`
+
+You should see:
+- The target `10.x.x.x:30101` under `acos-scraper-job`
+- Status: **UP**
+- Last scrape duration and labels
+
+K8s Cluster
+├── Master Node
+│   ├── kube-apiserver
+│   ├── scheduler
+│   └── etcd
+│
+├── Worker Node 1
+│   └── Runs Pod A, Pod B
+│
+└── Worker Node 2
+    └── Runs Pod C, Pod D
+;
+
+Great question! In Kubernetes, understanding the **Control Plane** and **Data Plane** is super important for grasping how the whole system works. Let me break it down simply, like a real-world analogy:
+
+---
+
+## ⚙️ What is the Control Plane?
+
+> The **Control Plane** is the **"brain"** of the Kubernetes cluster.  
+It makes all decisions about the cluster.
+
+It manages:
+- **What** runs
+- **Where** it runs
+- **When** to scale
+- **What to do** when something fails
+
+### ✨ Key Components of the Control Plane:
+
+| Component | Role |
+|----------|------|
+| `kube-apiserver` | Front door to the cluster (accepts all `kubectl` commands, API requests) |
+| `etcd` | Key-value store for all cluster data (like a database) |
+| `kube-scheduler` | Decides which node runs which Pod |
+| `kube-controller-manager` | Handles health, replication, etc. |
+| `cloud-controller-manager` (optional) | Integrates with cloud-specific stuff like AWS LoadBalancers |
+
+📍 These components usually run on the **master node**.
+
+---
+
+## 📦 What is the Data Plane?
+
+> The **Data Plane** is the **"worker"** layer — where your actual **application workloads (Pods)** run.
+
+It’s made up of the **Worker Nodes** and:
+
+### 🧱 Components on Each Worker Node:
+
+| Component | Role |
+|----------|------|
+| `kubelet` | Talks to the control plane and ensures containers are running |
+| `container runtime` | Actually runs containers (like Docker, containerd) |
+| `kube-proxy` | Manages networking to make communication between Pods/services work |
+
+---
+
+## 🧠 vs 🏗️ Summary:
+
+| Aspect         | Control Plane                  | Data Plane                |
+|----------------|-------------------------------|---------------------------|
+| Role           | Brains of the cluster          | Muscles (executes the workload) |
+| Runs On        | Master Nodes                   | Worker Nodes              |
+| Key Processes  | API Server, etcd, Scheduler    | kubelet, kube-proxy, container runtime |
+| Handles        | Cluster decisions, scheduling  | Running Pods & containers |
+
+---
+
+### 🧪 Real-life Example:
+
+You run:
+```bash
+kubectl apply -f my-app.yaml
+```
+
+- The **Control Plane** sees your request, schedules a Pod on the best node.
+- The **Data Plane (worker node)** pulls the image and runs your app in a container.
+- `kubelet` keeps it healthy, `kube-proxy` makes networking work.
+
+for kubectl get nodes
+kubectl describe - which gives ip ,ports used list of events in pods 
+
+kubectl logs
+kubectl exec
+kubectl get pods - A
+kubectl get pods -o wide 
+kubectl apply -f <pod.yml>
+
+Remember that Pods are running on an isolated, private network - so we'll need a proxy to access them in order to make debugging and interacting with these objects possible. To initialize a proxy, we'll use the command kubectl proxyin a second terminal 
+
+so to initalize  a proxy - kubectl proxy 
+
+if we need to conatiner logs-  
